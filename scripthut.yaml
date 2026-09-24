@@ -13,6 +13,13 @@ stacks:
     # The project venv itself is built per-commit by the `setup` task from
     # uv.lock, inside the repo clone: a stack's `input_files` are only hashed,
     # never uploaded, so `prep` cannot see uv.lock and cannot build the venv.
+    #
+    # NOTE: prep and init deliberately hardcode the same PREFIX instead of using
+    # $STACK_DIR.  scripthut exports STACK_DIR only while running `prep`; a
+    # task's `init:` text is emitted verbatim by runs/env.py, so ${STACK_DIR}
+    # expands to the empty string there and UV_CACHE_DIR became "/uv-cache"
+    # (permission denied).  A fixed, version-stamped prefix sidesteps that.
+    # Keep the version in PREFIX and in `inputs` below in sync.
     inputs:
       uv_version: "0.11.29"
       python_version: "3.13"
@@ -20,18 +27,21 @@ stacks:
     memory: 4G
     time_limit: "0:30:00"
     prep: |
-      set -euo pipefail
-      export UV_INSTALL_DIR="$STACK_DIR/bin"
+      set -eo pipefail
+      PREFIX="$HOME/.local/scripthut/uv-0.11.29"
+      mkdir -p "$PREFIX"
+      export UV_INSTALL_DIR="$PREFIX/bin"
       export UV_NO_MODIFY_PATH=1
-      export UV_PYTHON_INSTALL_DIR="$STACK_DIR/python"
-      export UV_CACHE_DIR="$STACK_DIR/uv-cache"
+      export UV_PYTHON_INSTALL_DIR="$PREFIX/python"
+      export UV_CACHE_DIR="$PREFIX/cache"
       curl -fsSL https://astral.sh/uv/0.11.29/install.sh | sh
-      "$STACK_DIR/bin/uv" python install 3.13
-      "$STACK_DIR/bin/uv" --version
+      "$PREFIX/bin/uv" python install 3.13
+      "$PREFIX/bin/uv" --version
     init: |
-      export PATH="${STACK_DIR}/bin:$PATH"
-      export UV_PYTHON_INSTALL_DIR="${STACK_DIR}/python"
-      export UV_CACHE_DIR="${STACK_DIR}/uv-cache"
+      PREFIX="$HOME/.local/scripthut/uv-0.11.29"
+      export PATH="$PREFIX/bin:$PATH"
+      export UV_PYTHON_INSTALL_DIR="$PREFIX/python"
+      export UV_CACHE_DIR="$PREFIX/cache"
       export UV_NO_MODIFY_PATH=1
 
 env_groups:
