@@ -135,8 +135,10 @@ PAPER = {
 WIFE_CONDITIONAL = {"wly", "hourw"}
 SHARES = {"head_employed", "ba", "wife_employed", "wba"}
 
-# Panel B. The paper's note says these are standard deviations; descriptive_stats.do
-# posts r(Var). The published numbers match the SD -- see the diagnostic at the end.
+# Panel B. The paper's note calls these standard deviations; descriptive_stats.do
+# posts r(Var) rounded to 3dp. The published numbers are the square root of that
+# *rounded* variance -- taking the root of the unrounded variance misses Y1 by one
+# unit in the third decimal. See the diagnostic at the end.
 PAPER_VOL = {
     "SD Δ log W1 (head wage)":     ("dlog_w",  0.498),
     "SD Δ log W2 (wife wage)":     ("dlog_ww", 0.457),
@@ -167,7 +169,7 @@ for label, (var, pv) in PAPER_VOL.items():
         {
             "row": label,
             "paper_mean": pv,
-            "repl_mean": sround(d[var].std(ddof=1), 0.001),
+            "repl_mean": sround(np.sqrt(sround(d[var].var(ddof=1), 0.001)), 0.001),
             "paper_median": None,
             "repl_median": None,
         }
@@ -180,7 +182,8 @@ def diff(row):
     p, r = row["paper_mean"], row["repl_mean"]
     if p in (None, 0) or pd.isna(r):
         return ""
-    return f"{100 * (r - p) / abs(p):+.2f}%"
+    g = 100 * (r - p) / abs(p)
+    return f"{g:+.2f}%" if abs(g) >= 0.005 else "exact"
 
 
 def mdiff(row):
@@ -189,7 +192,8 @@ def mdiff(row):
         return ""
     if p == 0:
         return "exact" if r == 0 else "n/a"
-    return f"{100 * (r - p) / abs(p):+.2f}%"
+    g = 100 * (r - p) / abs(p)
+    return f"{g:+.2f}%" if abs(g) >= 0.005 else "exact"
 
 
 t["mean_gap"] = t.apply(diff, axis=1)
@@ -217,7 +221,10 @@ print(f"\nwritten: {OUT.relative_to(ROOT)}")
 # Panel B diagnostic: descriptive_stats.do posts r(Var), but the published table
 # matches the standard deviation, as the note under Table 1 states.
 print("\nPanel B, both readings:")
-print(f"{'':<22}{'paper':>10}{'r(Var) in .do':>15}{'sqrt = SD':>12}")
+print(f"{'':<22}{'paper':>10}{'r(Var) in .do':>15}{'sqrt(rounded)':>15}{'sqrt(raw)':>11}")
 for label, (var, pv) in PAPER_VOL.items():
     v = d[var].var(ddof=1)
-    print(f"{label.split('(')[0].strip():<22}{pv:>10.3f}{v:>15.3f}{np.sqrt(v):>12.3f}")
+    print(
+        f"{label.split('(')[0].strip():<22}{pv:>10.3f}{sround(v, 0.001):>15.3f}"
+        f"{np.sqrt(sround(v, 0.001)):>15.3f}{np.sqrt(v):>11.3f}"
+    )

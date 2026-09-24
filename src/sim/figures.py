@@ -139,15 +139,18 @@ def figure_mean_by_T(summary: pd.DataFrame, target: Path, N: int = N_BASELINE) -
 
                 if model == MODELS[-1]:  # direct labels once, on the right panel
                     last = cell.iloc[-1]
+                    # Drop the label below the line when it would sit on the
+                    # rho = 0.7 reference.
+                    near_reference = abs(last["mean_rho"] - RHO) < 0.08
                     ax.annotate(
                         ESTIMATOR_LABELS[estimator],
                         xy=(last["T"], last["mean_rho"]),
-                        xytext=(-2, 7),
+                        xytext=(-2, -8 if near_reference else 7),
                         textcoords="offset points",
                         color=INK_SECONDARY,
                         fontsize=8.5,
                         ha="right",
-                        va="bottom",
+                        va="top" if near_reference else "bottom",
                     )
 
             ax.set_xscale("log")
@@ -160,7 +163,7 @@ def figure_mean_by_T(summary: pd.DataFrame, target: Path, N: int = N_BASELINE) -
 
         axes[0].set_ylim(-0.33, 1.14)
         axes[0].set_ylabel(r"Mean $\hat\rho$ across replications")
-        axes[0].legend(loc="center left", bbox_to_anchor=(0.0, 0.62))
+        axes[0].legend(loc="upper left", bbox_to_anchor=(0.0, 1.0))
 
         reps = int(block["R"].max())
         fig.suptitle(
@@ -177,21 +180,31 @@ def figure_mean_by_T(summary: pd.DataFrame, target: Path, N: int = N_BASELINE) -
         return _save(fig, target, "fig1_mean_rho_by_T")
 
 
-def _gaussian_kde(sample: np.ndarray, grid: np.ndarray) -> np.ndarray:
-    """Silverman-bandwidth Gaussian KDE, peak-normalised (no scipy dependency)."""
-    sample = np.asarray(sample, dtype=float)
+def _bandwidth(sample: np.ndarray) -> float:
+    """Silverman's rule of thumb."""
     n = sample.size
-    sd = sample.std(ddof=1)
+    sd = float(sample.std(ddof=1))
     iqr = float(np.subtract(*np.percentile(sample, [75, 25])))
     spread = min(sd, iqr / 1.349) if iqr > 0 else sd
     if not np.isfinite(spread) or spread <= 0:
         spread = max(sd, 1e-4)
-    h = 0.9 * spread * n ** (-0.2)
+    return 0.9 * spread * n ** (-0.2)
+
+
+def _gaussian_kde(sample: np.ndarray, pad: float = 4.0) -> tuple[np.ndarray, np.ndarray]:
+    """Peak-normalised Gaussian KDE on a grid local to the sample (no scipy).
+
+    The grid stops a few bandwidths either side of the data, so a density never
+    draws a flat line across the parts of the axis where it has no mass.
+    """
+    sample = np.asarray(sample, dtype=float)
+    h = _bandwidth(sample)
+    grid = np.linspace(sample.min() - pad * h, sample.max() + pad * h, 801)
 
     z = (grid[:, None] - sample[None, :]) / h
-    density = np.exp(-0.5 * z**2).sum(axis=1) / (n * h * np.sqrt(2 * np.pi))
+    density = np.exp(-0.5 * z**2).sum(axis=1) / (sample.size * h * np.sqrt(2 * np.pi))
     peak = density.max()
-    return density / peak if peak > 0 else density
+    return grid, (density / peak if peak > 0 else density)
 
 
 def figure_density_at_T(
@@ -203,8 +216,8 @@ def figure_density_at_T(
         raise ValueError(f"no draws at T={T}, N={N}")
 
     lo, hi = float(block["rho_hat"].min()), float(block["rho_hat"].max())
-    pad = 0.09 * max(hi - lo, 0.2)
-    grid = np.linspace(min(lo, RHO) - pad, max(hi, RHO) + pad, 4001)
+    pad = 0.06 * max(hi - lo, 0.2)
+    xlim = (min(lo, RHO) - pad, max(hi, RHO) + pad)
 
     with plt.rc_context(RC):
         fig, axes = plt.subplots(2, 1, figsize=(8.6, 4.6), sharex=True, sharey=True)
@@ -220,7 +233,7 @@ def figure_density_at_T(
                 if sample.size < 2:
                     continue
                 color = SERIES[estimator]
-                density = _gaussian_kde(sample, grid)
+                grid, density = _gaussian_kde(sample)
 
                 ax.axvline(
                     plim(estimator, model, T),
@@ -256,13 +269,15 @@ def figure_density_at_T(
                 )
 
             ax.set_yticks([])
-            ax.set_ylim(-0.1, 1.38)
+            ax.set_ylim(-0.1, 1.30)
+            ax.set_xlim(*xlim)
             ax.set_ylabel("Density")
             ax.set_title(MODEL_LABELS[model], color=INK, loc="left", pad=6)
 
-        axes[0].annotate(
+        # Labelled on the lower panel, where the space right of the line is free.
+        axes[-1].annotate(
             f"true $\\rho$ = {RHO}",
-            xy=(RHO, 1.34),
+            xy=(RHO, 1.27),
             xytext=(4, 0),
             textcoords="offset points",
             color=INK_MUTED,
@@ -270,8 +285,9 @@ def figure_density_at_T(
             ha="left",
             va="top",
         )
-        axes[0].legend(loc="upper left", ncols=3, bbox_to_anchor=(0.0, 1.02))
         axes[-1].set_xlabel(r"$\hat\rho$")
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="lower center", ncols=3, bbox_to_anchor=(0.5, -0.05))
 
         reps = int(block["R"].max())
         fig.suptitle(
