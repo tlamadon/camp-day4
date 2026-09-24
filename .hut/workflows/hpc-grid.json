@@ -1,0 +1,339 @@
+{
+  "name": "hpc-grid",
+  "description": "SPEC.md grid at HPC scale: 2 models x 5 T, N=500, R=1000",
+  "tasks": [
+    {
+      "id": "setup",
+      "name": "uv sync (from uv.lock)",
+      "command": "set -eo pipefail\nuv sync --frozen\nuv run python -c 'import numpy, pandas, pyarrow, matplotlib; print(\"deps ok\")'\n",
+      "partition": "standard",
+      "cpus": 2,
+      "memory": "4G",
+      "time_limit": "0:20:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sim.M0.T3",
+      "name": "M0, T=3, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M0 --T 3 --N 500 --R 1000 --seed 0 --out output/pilot/M0_T3_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M0_T3_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M0.T5",
+      "name": "M0, T=5, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M0 --T 5 --N 500 --R 1000 --seed 0 --out output/pilot/M0_T5_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M0_T5_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M0.T10",
+      "name": "M0, T=10, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M0 --T 10 --N 500 --R 1000 --seed 0 --out output/pilot/M0_T10_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M0_T10_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M0.T20",
+      "name": "M0, T=20, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M0 --T 20 --N 500 --R 1000 --seed 0 --out output/pilot/M0_T20_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M0_T20_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M0.T50",
+      "name": "M0, T=50, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M0 --T 50 --N 500 --R 1000 --seed 0 --out output/pilot/M0_T50_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M0_T50_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M1.T3",
+      "name": "M1, T=3, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M1 --T 3 --N 500 --R 1000 --seed 0 --out output/pilot/M1_T3_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M1_T3_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M1.T5",
+      "name": "M1, T=5, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M1 --T 5 --N 500 --R 1000 --seed 0 --out output/pilot/M1_T5_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M1_T5_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M1.T10",
+      "name": "M1, T=10, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M1 --T 10 --N 500 --R 1000 --seed 0 --out output/pilot/M1_T10_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M1_T10_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M1.T20",
+      "name": "M1, T=20, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M1 --T 20 --N 500 --R 1000 --seed 0 --out output/pilot/M1_T20_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M1_T20_N500.parquet"
+      ]
+    },
+    {
+      "id": "sim.M1.T50",
+      "name": "M1, T=50, N=500, R=1000",
+      "command": "set -eo pipefail\nuv run python -m sim run --model M1 --T 50 --N 500 --R 1000 --seed 0 --out output/pilot/M1_T50_N500.parquet\n",
+      "deps": [
+        "setup"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "1:00:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md"
+      ],
+      "outputs": [
+        "output/pilot/M1_T50_N500.parquet"
+      ]
+    },
+    {
+      "id": "summary",
+      "name": "summary, tables, figures, report",
+      "command": "set -eo pipefail\nuv run python -m sim summary --output-dir output\nuv run python -m sim figures --output-dir output\nuv run python -m sim tables  --output-dir output\nuv run python -m sim report  --output-dir output\n\n# Provenance gate: every parquet must carry this commit and this SPEC.md hash.\nuv run python -m sim check --output-dir output\n\n# Surface the deliverables in the ScriptHut UI instead of making someone scp.\ncp output/figures/*.png output/report.html output/summary.csv \"$SCRIPTHUT_OUTPUT_DIR/\"\ncp output/tables/*.tex \"$SCRIPTHUT_OUTPUT_DIR/\" 2>/dev/null || true\n\n{\n  echo '## Figure 1 -- mean rho-hat against T'\n  echo '![](fig1_mean_rho_by_T.png)'\n  echo\n  echo '## Figure 2 -- densities of rho-hat at T = 10'\n  echo '![](fig2_density_T10.png)'\n  echo\n  cat output/table_main.md\n  echo\n  cat output/table_coverage.md\n} > \"$SCRIPTHUT_TASK_SUMMARY\"\n\necho \"- **grid**: 2 models x 5 values of T, N=500, R=1000 -- $(ls output/pilot/*.parquet | wc -l | tr -d ' ') cells, provenance PASS\" \\\n  > \"$SCRIPTHUT_RUN_SUMMARY\"\n",
+      "deps": [
+        "sim.*"
+      ],
+      "partition": "standard",
+      "cpus": 1,
+      "memory": "4G",
+      "time_limit": "0:30:00",
+      "env": [
+        {
+          "include": [
+            "sim"
+          ]
+        }
+      ],
+      "inputs": [
+        "src/sim/*.py",
+        "pyproject.toml",
+        "uv.lock",
+        "SPEC.md",
+        "output/pilot/*.parquet"
+      ],
+      "outputs": [
+        "output/summary.csv",
+        "output/table_main.md",
+        "output/table_coverage.md",
+        "output/figures/fig1_mean_rho_by_T.png",
+        "output/figures/fig1_mean_rho_by_T.pdf",
+        "output/figures/fig2_density_T10.png",
+        "output/figures/fig2_density_T10.pdf",
+        "output/report.html",
+        "output/artifact.html"
+      ]
+    }
+  ]
+}

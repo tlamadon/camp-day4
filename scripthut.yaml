@@ -1,0 +1,51 @@
+# ScriptHut project config for camp-day4.
+#
+# Read twice: locally by the `scripthut` CLI, and server-side when a workflow
+# runs from the `camp-day4` git source (ScriptHut pulls the repo's root
+# scripthut.yaml and overlays its stacks / env / env_groups).
+#
+# Infrastructure lives in ~/.config/scripthut/scripthut.yaml.  Putting
+# `backends:`, `sources:`, `settings:` or `pricing:` here is a load-time error.
+
+stacks:
+  - name: uv-0.11
+    # The uv binary plus a CPython 3.13 for it -- nothing project-specific.
+    # The project venv itself is built per-commit by the `setup` task from
+    # uv.lock, inside the repo clone: a stack's `input_files` are only hashed,
+    # never uploaded, so `prep` cannot see uv.lock and cannot build the venv.
+    inputs:
+      uv_version: "0.11.29"
+      python_version: "3.13"
+    cpus: 2
+    memory: 4G
+    time_limit: "0:30:00"
+    prep: |
+      set -euo pipefail
+      export UV_INSTALL_DIR="$STACK_DIR/bin"
+      export UV_NO_MODIFY_PATH=1
+      export UV_PYTHON_INSTALL_DIR="$STACK_DIR/python"
+      export UV_CACHE_DIR="$STACK_DIR/uv-cache"
+      curl -fsSL https://astral.sh/uv/0.11.29/install.sh | sh
+      "$STACK_DIR/bin/uv" python install 3.13
+      "$STACK_DIR/bin/uv" --version
+    init: |
+      export PATH="${STACK_DIR}/bin:$PATH"
+      export UV_PYTHON_INSTALL_DIR="${STACK_DIR}/python"
+      export UV_CACHE_DIR="${STACK_DIR}/uv-cache"
+      export UV_NO_MODIFY_PATH=1
+
+env_groups:
+  # Every task in .hut/workflows/ includes this.  matplotlib needs a headless
+  # backend and a writable config dir on a compute node; the BLAS libraries must
+  # not grab more threads than Slurm allocated (one cell is one core).
+  sim:
+    - stacks: [uv-0.11]
+    - set:
+        MPLBACKEND: Agg
+        OMP_NUM_THREADS: "1"
+        OPENBLAS_NUM_THREADS: "1"
+        MKL_NUM_THREADS: "1"
+        NUMEXPR_NUM_THREADS: "1"
+    - init: |
+        export MPLCONFIGDIR="$HOME/.cache/matplotlib"
+        mkdir -p "$MPLCONFIGDIR"
