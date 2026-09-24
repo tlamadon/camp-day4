@@ -1,4 +1,4 @@
-"""LaTeX versions of the two deliverable tables.
+"""LaTeX versions of the deliverable tables.
 
 The PDF build is on hold until a TeX engine goes into mise.toml; this module
 only writes the .tex sources, which compile standalone under booktabs.
@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import ESTIMATOR_LABELS, MODEL_LABELS
-from .summarize import coverage_table, main_table
+from .summarize import coverage_table, main_table, sigma_eps_table
 
 
 def _escape(text: str) -> str:
@@ -63,6 +63,14 @@ def build(output_dir: Path) -> list[Path]:
             "Share of 95\\% confidence intervals containing $\\rho = 0.7$.",
             "tab:coverage",
             "table_coverage.tex",
+        ),
+        (
+            sigma_eps_table(summary),
+            "Mean $\\hat\\sigma_\\varepsilon$ (SD) [plim] and its coverage. "
+            "Only the growth-covariance GMM identifies $\\sigma_\\varepsilon$; "
+            "true $\\sigma_\\varepsilon = 0.3$.",
+            "tab:sigma",
+            "table_sigma_eps.tex",
         ),
     ]
     for table, caption, label, name in specs:

@@ -20,14 +20,20 @@ import numpy as np
 import pandas as pd
 
 from .analytics import plim
-from .config import ESTIMATOR_LABELS, ESTIMATORS, MODELS, RHO
+from .config import (
+    ESTIMATOR_LABELS,
+    ESTIMATOR_SHORT_LABELS,
+    ESTIMATORS,
+    MODELS,
+    RHO,
+    SIGMA_EPS,
+)
 from .figures import _bandwidth
 from .provenance import git_commit, repo_root, spec_sha256
 from .runner import load_cells
 
-#: Categorical slots 1-3 of the validated palette, as CSS variable names.
-SERIES_CLASS = {"pooled": "s1", "fd": "s2", "within": "s3"}
-SHORT_LABELS = {"pooled": "Pooled OLS", "fd": "First differences", "within": "Within (FE)"}
+#: Categorical slots 1-4 of the validated palette, as CSS variable names.
+SERIES_CLASS = {"pooled": "s1", "fd": "s2", "within": "s3", "gmm": "s4"}
 
 
 # ---------------------------------------------------------------- Figure 1
@@ -76,10 +82,17 @@ def _fig_mean_by_t(summary: pd.DataFrame, model: str, ts: list[int]) -> str:
                 p.append(
                     f'<rect class="mk {c}" x="{x-3.6:.1f}" y="{y-3.6:.1f}" width="7.2" height="7.2"/>'
                 )
-            else:
+            elif est == "within":
                 p.append(
                     f'<polygon class="mk {c}" points="{x:.1f},{y-4.4:.1f} '
                     f'{x+4:.1f},{y+3:.1f} {x-4:.1f},{y+3:.1f}"/>'
+                )
+            else:
+                # A diamond, so the GMM reads apart from the pooled circle it sits
+                # on in M0, where both estimators are consistent.
+                p.append(
+                    f'<polygon class="mk {c}" points="{x:.1f},{y-4.6:.1f} '
+                    f'{x+4.6:.1f},{y:.1f} {x:.1f},{y+4.6:.1f} {x-4.6:.1f},{y:.1f}"/>'
                 )
     p.append(f'<text class="axlab" x="{ml+pw/2:.0f}" y="{H-3}">panel length T</text>')
     p.append("</svg>")
@@ -102,7 +115,7 @@ def _fig_densities(draws: pd.DataFrame, T: int = 10, N: int = 500) -> str:
 
     p = [
         f'<svg viewBox="0 0 {W} {H}" class="chart wide" role="img" '
-        f'aria-label="Distribution of rho-hat at T = {T} for the six cells">'
+        f'aria-label="Distribution of rho-hat at T = {T} for the eight cells">'
     ]
     for gv in np.arange(-0.2, 1.01, 0.2):
         if lo < gv < hi:
@@ -113,6 +126,9 @@ def _fig_densities(draws: pd.DataFrame, T: int = 10, N: int = 500) -> str:
             p.append(f'<text class="tick" x="{X(gv):.1f}" y="{mt+2*rowh+17:.0f}">{gv:.1f}</text>')
     p.append(f'<line class="ref" x1="{X(RHO):.1f}" x2="{X(RHO):.1f}" y1="{mt-12}" y2="{mt+2*rowh:.0f}"/>')
     p.append(f'<text class="reflab" x="{X(RHO)+5:.1f}" y="{mt-15}">true ρ = {RHO}</text>')
+
+    def peak(model: str, est: str) -> float:
+        return float(block[(block.model == model) & (block.estimator == est)].rho_hat.mean())
 
     captions = {"M0": "M0 · no individual effects", "M1": "M1 · fixed effects"}
     for i, model in enumerate(MODELS):
@@ -147,7 +163,15 @@ def _fig_densities(draws: pd.DataFrame, T: int = 10, N: int = 500) -> str:
                     f'y1="{base+1:.1f}" y2="{base+7:.1f}"/>'
                 )
             lx = min(max(X(float(s.mean())), ml + 42), ml + pw - 42)
-            p.append(f'<text class="peak" x="{lx:.1f}" y="{top-8:.1f}">{SHORT_LABELS[est]}</text>')
+            # In M0 pooled OLS and the GMM are both consistent and their peaks
+            # coincide; the right-hand label of such a pair moves up a line.
+            crowded = any(
+                0 < float(s.mean()) - peak(model, other) < 0.12 * (hi - lo) for other in ESTIMATORS
+            )
+            p.append(
+                f'<text class="peak" x="{lx:.1f}" y="{top - (22 if crowded else 8):.1f}">'
+                f"{ESTIMATOR_SHORT_LABELS[est]}</text>"
+            )
     p.append(f'<text class="axlab" x="{ml+pw/2:.0f}" y="{H-4}">ρ̂</text>')
     p.append("</svg>")
     return "\n".join(p)
@@ -206,6 +230,37 @@ def _coverage_table(summary: pd.DataFrame, ts: list[int]) -> str:
     )
 
 
+def _sigma_eps_table(summary: pd.DataFrame, ts: list[int]) -> str:
+    """Deliverable 5: what the GMM recovers besides rho."""
+    head = "".join(f"<th>T = {t}</th>" for t in ts)
+    rows = []
+    for est in ESTIMATORS:
+        for model in MODELS:
+            cells = [_cell(summary, model, t, est) for t in ts]
+            if pd.isna(cells[0].mean_sigma_eps):
+                continue
+            means = "".join(
+                f'<td><span class="num">{r.mean_sigma_eps:.3f}</span>'
+                f'<span class="sd">({r.sigma_eps_sd:.3f})</span></td>'
+                for r in cells
+            )
+            cover = "".join(f'<td><span class="num">{r.sigma_eps_coverage:.2f}</span></td>'
+                            for r in cells)
+            rows.append(
+                f'<tr class="grp"><th rowspan="2" scope="rowgroup" class="stub">'
+                f'<span class="dot {SERIES_CLASS[est]}"></span>{ESTIMATOR_LABELS[est]}'
+                f'<span class="mdl">{model}</span></th>'
+                f'<th class="sub" scope="row">mean (SD)</th>{means}</tr>'
+                f'<tr><th class="sub ghost" scope="row">coverage</th>{cover}</tr>'
+            )
+    return (
+        '<div class="scroll"><table class="main"><thead><tr>'
+        f'<th class="stub"></th><th></th>{head}</tr></thead><tbody>'
+        + "".join(rows)
+        + "</tbody></table></div>"
+    )
+
+
 # ---------------------------------------------------------------- page
 #: The page body.  Doubled braces are literal CSS; single braces are fields.
 PAGE = """<title>Panel AR(1) Pilot</title>
@@ -216,7 +271,7 @@ PAGE = """<title>Panel AR(1) Pilot</title>
 :root {{
   --ground:#f6f7f9; --surface:#ffffff; --ink:#12151c; --ink-2:#4e5766; --ink-3:#8b93a2;
   --rule:#e1e5ec; --rule-strong:#c6cdd8; --accent:#1c5cab; --band:#eef1f5;
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
   --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
   --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
@@ -225,13 +280,13 @@ PAGE = """<title>Panel AR(1) Pilot</title>
   :root:not([data-theme="light"]) {{
     --ground:#101318; --surface:#171b21; --ink:#edf0f4; --ink-2:#a5aebc; --ink-3:#6c7686;
     --rule:#262c35; --rule-strong:#3a424f; --accent:#6da7ec; --band:#1c212a;
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
   }}
 }}
 :root[data-theme="dark"] {{
   --ground:#101318; --surface:#171b21; --ink:#edf0f4; --ink-2:#a5aebc; --ink-3:#6c7686;
   --rule:#262c35; --rule-strong:#3a424f; --accent:#6da7ec; --band:#1c212a;
-  --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
 }}
 
 body {{ background:var(--ground); color:var(--ink); font-family:var(--sans);
@@ -254,17 +309,18 @@ p {{ margin:0; }}
 .meta b {{ color:var(--ink-2); font-weight:500; }}
 
 /* findings --------------------------------------------------------------- */
-.findings {{ display:grid; grid-template-columns:repeat(3,1fr); gap:0; margin-top:42px;
+.findings {{ display:grid; grid-template-columns:repeat(4,1fr); gap:0; margin-top:42px;
   border-top:2px solid var(--ink); }}
 .finding {{ padding:18px 20px 20px 0; border-right:1px solid var(--rule); }}
 .finding:last-child {{ border-right:0; }}
 .finding + .finding {{ padding-left:20px; }}
 .finding .lede {{ display:flex; align-items:center; gap:8px; }}
-.finding .val {{ font-family:var(--mono); font-size:29px; font-weight:500; letter-spacing:-.02em;
+.finding .val {{ font-family:var(--mono); font-size:26px; font-weight:500; letter-spacing:-.02em;
   font-variant-numeric:tabular-nums; margin-top:10px; display:block; }}
 .finding .cap {{ color:var(--ink-2); font-size:13.5px; margin-top:8px; text-wrap:pretty; }}
 .dot {{ width:9px; height:9px; border-radius:2px; display:inline-block; flex:none; }}
-.dot.s1 {{ background:var(--s1); }} .dot.s2 {{ background:var(--s2); }} .dot.s3 {{ background:var(--s3); }}
+.dot.s1 {{ background:var(--s1); }} .dot.s2 {{ background:var(--s2); }}
+.dot.s3 {{ background:var(--s3); }} .dot.s4 {{ background:var(--s4); }}
 
 /* sections --------------------------------------------------------------- */
 section {{ margin-top:54px; }}
@@ -323,8 +379,9 @@ svg text {{ font-family:var(--mono); }}
 .plimv {{ fill:none; stroke-width:1.3; stroke-dasharray:4 3; opacity:.55; }}
 .rug {{ fill:none; stroke-width:1.6; }}
 .s1 {{ stroke:var(--s1); }} .s2 {{ stroke:var(--s2); }} .s3 {{ stroke:var(--s3); }}
+.s4 {{ stroke:var(--s4); }}
 .mk.s1, .dens.s1 {{ fill:var(--s1); }} .mk.s2, .dens.s2 {{ fill:var(--s2); }}
-.mk.s3, .dens.s3 {{ fill:var(--s3); }}
+.mk.s3, .dens.s3 {{ fill:var(--s3); }} .mk.s4, .dens.s4 {{ fill:var(--s4); }}
 
 /* footer ----------------------------------------------------------------- */
 .cols {{ display:grid; grid-template-columns:repeat(2,1fr); gap:30px 40px; margin-top:22px; }}
@@ -337,6 +394,9 @@ svg text {{ font-family:var(--mono); }}
 footer {{ margin-top:52px; padding-top:16px; border-top:1px solid var(--rule);
   font-family:var(--mono); font-size:11px; color:var(--ink-3); }}
 
+@media (max-width:1000px) {{
+  .findings {{ grid-template-columns:1fr 1fr; }}
+}}
 @media (max-width:720px) {{
   .findings {{ grid-template-columns:1fr; }}
   .finding {{ border-right:0; border-bottom:1px solid var(--rule); padding:16px 0; }}
@@ -349,11 +409,13 @@ footer {{ margin-top:52px; padding-top:16px; border-top:1px solid var(--rule);
 <div class="wrap">
   <header>
     <p class="eyebrow">Monte&nbsp;Carlo pilot &middot; R&nbsp;=&nbsp;10</p>
-    <h1>Panel AR(1): three estimators, two DGPs</h1>
+    <h1>Panel AR(1): four estimators, two DGPs</h1>
     <p class="deck">Pooled OLS is fine without individual effects and badly biased with them.
       OLS in first differences is inconsistent either way. The within estimator carries the
-      Nickell bias in both, shrinking at rate 1/T. Every one of the 30 cells lands on its
-      analytical plim &mdash; the largest gap is {max_gap}.</p>
+      Nickell bias in both, shrinking at rate 1/T. GMM on the whole covariance matrix of
+      growth recovers &rho; and &sigma;<sub>&epsilon;</sub> in both models at every T &mdash;
+      from the same differenced data that defeats first differences. Every one of the 40
+      cells lands on its analytical plim; the largest gap is {max_gap}.</p>
     <div class="meta">
       <span><b>&rho;</b> 0.7</span>
       <span><b>&sigma;<sub>&epsilon;</sub></b> 0.3</span>
@@ -387,19 +449,27 @@ footer {{ margin-top:52px; padding-top:16px; border-top:1px solid var(--rule);
       <p class="cap">Nickell bias from T&nbsp;=&nbsp;3 to T&nbsp;=&nbsp;50. Identical in M0 and
         M1, since demeaning removes &alpha;<sub>i</sub> exactly. Still 5% short at T&nbsp;=&nbsp;50.</p>
     </div>
+    <div class="finding">
+      <span class="lede"><span class="dot s4"></span><h3>Growth GMM</h3></span>
+      <span class="val">{p_gmm}</span>
+      <p class="cap">Its plim, in both models and at every T. &Omega;, the covariance matrix
+        of &Delta;y, holds no &alpha;<sub>i</sub>; fitting all of it rather than one moment
+        ratio pins &rho; and &sigma;<sub>&epsilon;</sub>&nbsp;=&nbsp;{p_sigma}.</p>
+    </div>
   </div>
 
   <section>
     <div class="shead"><span class="snum">01</span><h2>Main table</h2></div>
     <p class="note">Mean &rho;&#770; across the 10 replications, with the standard deviation of
-      the draws in parentheses, over the analytical plim.</p>
+      the draws in parentheses, over the analytical plim. True &rho; = 0.7.</p>
     {main}
   </section>
 
   <section>
     <div class="shead"><span class="snum">02</span><h2>Mean &rho;&#770; against T</h2></div>
     <p class="note">Solid: the simulated mean. Dashed: the plim. The grey line marks the truth.
-      Only the within estimator moves with T, and it is still short at T&nbsp;=&nbsp;50.</p>
+      Only the within estimator moves with T, and it is still short at T&nbsp;=&nbsp;50. In M0
+      the GMM line runs along the truth, under pooled OLS: both are consistent there.</p>
     <div class="panels">
       <div class="panel"><p class="ptitle">M0 &middot; no individual effects</p>{fig1_m0}</div>
       <div class="panel"><p class="ptitle">M1 &middot; fixed effects</p>{fig1_m1}</div>
@@ -408,6 +478,7 @@ footer {{ margin-top:52px; padding-top:16px; border-top:1px solid var(--rule);
       <span><span class="dot s1"></span>Pooled OLS</span>
       <span><span class="dot s2"></span>First-difference OLS</span>
       <span><span class="dot s3"></span>Within (FE)</span>
+      <span><span class="dot s4"></span>Growth-covariance GMM</span>
     </div>
     <p class="figcap">Monte Carlo error is too small to see: the largest standard error of a
       cell mean is {mc}. The two panels share one vertical scale.</p>
@@ -417,8 +488,8 @@ footer {{ margin-top:52px; padding-top:16px; border-top:1px solid var(--rule);
     <div class="shead"><span class="snum">03</span><h2>Where the draws land at T = 10</h2></div>
     <p class="note">Each curve is a Gaussian kernel density over the 10 replications, scaled to
       its own peak; the ticks below the axis are the replications themselves. The biased
-      estimators are tightly centred on the wrong value &mdash; nothing sits near 0.7 except
-      pooled OLS in M0.</p>
+      estimators are tightly centred on the wrong value. Only two curves sit on 0.7: the GMM,
+      in both panels, and pooled OLS in M0 &mdash; where it lands underneath the GMM.</p>
     {fig2}
     <p class="figcap">Dashed verticals: the analytical plim of each cell.</p>
   </section>
@@ -428,11 +499,24 @@ footer {{ margin-top:52px; padding-top:16px; border-top:1px solid var(--rule);
     <p class="note">Share of the 10 confidence intervals &rho;&#770;&nbsp;&plusmn;&nbsp;1.96&nbsp;&times;
       clustered SE that contain 0.7.</p>
     {cov}
-    <p class="figcap">Pooled OLS in M0 covers {cov_m0}; the five biased cells cover nothing at any T.
-      An interval centred on the wrong value cannot cover, and tighter standard errors only make
-      it worse &mdash; which is the point of reporting coverage next to bias. The standard errors
+    <p class="figcap">The three consistent cells cover: pooled OLS in M0 {cov_m0}, the GMM
+      {cov_gmm} across both models. The five biased cells cover nothing at any T. An interval
+      centred on the wrong value cannot cover, and tighter standard errors only make it worse
+      &mdash; which is the point of reporting coverage next to bias. The standard errors
       themselves are sound: the median ratio of mean clustered SE to the actual dispersion of
-      &rho;&#770; is {se_ratio} across the 30 cells, noisy because a standard deviation from 10 draws is.</p>
+      &rho;&#770; is {se_ratio} across the 40 cells, noisy because a standard deviation from 10 draws is.</p>
+  </section>
+
+  <section>
+    <div class="shead"><span class="snum">05</span><h2>&sigma;<sub>&epsilon;</sub>, for free</h2></div>
+    <p class="note">&Omega; is linear in &sigma;<sub>&epsilon;</sub>&sup2; and the GMM fits all of
+      &Omega;, so the innovation scale comes out of the same criterion as &rho;. What does not
+      come out is &sigma;<sub>&alpha;</sub>: growth cannot see a level, which is exactly why this
+      estimator does not care whether the level is there.</p>
+    {sigma}
+    <p class="figcap">True &sigma;<sub>&epsilon;</sub> = 0.3. Coverage is the share of the 10
+      intervals &sigma;&#770;<sub>&epsilon;</sub>&nbsp;&plusmn;&nbsp;1.96&nbsp;&times;&nbsp;SE
+      containing it, with the SE from the delta method on &sigma;&#770;<sub>&epsilon;</sub>&sup2;.</p>
   </section>
 
   <section>
@@ -447,33 +531,37 @@ footer {{ margin-top:52px; padding-top:16px; border-top:1px solid var(--rule);
       </div>
       <div>
         <h3>Standard errors</h3>
-        <p>Clustered by individual for all three estimators, as closed-form sandwiches around
-          &Sigma;xy&nbsp;/&nbsp;&Sigma;x&sup2;. The spec does not pin a finite-sample factor;
-          this uses G/(G&minus;1), which keeps the SE-to-dispersion diagnostic readable at
-          T&nbsp;=&nbsp;3.</p>
+        <p>Clustered by individual throughout: closed-form sandwiches around
+          &Sigma;xy&nbsp;/&nbsp;&Sigma;x&sup2; for the three regressions, and the GMM sandwich
+          for the fourth, where one individual contributes one moment vector and the clustering
+          is automatic. The spec does not pin a finite-sample factor; this uses G/(G&minus;1),
+          which keeps the SE-to-dispersion diagnostic readable at T&nbsp;=&nbsp;3.</p>
       </div>
       <div>
         <h3>Cost</h3>
         <table class="run">
-          <tr><td>pilot grid, R = 10</td><td>1.5 s</td></tr>
-          <tr><td>R = 1,000, N = 500</td><td>7.6 s</td></tr>
-          <tr><td>R = 1,000, N = 5,000</td><td>36.6 s</td></tr>
+          <tr><td>pilot grid, R = 10</td><td>3.3 s</td></tr>
+          <tr><td>R = 1,000, N = 500</td><td>19.1 s</td></tr>
+          <tr><td>R = 1,000, N = 5,000</td><td>71.5 s</td></tr>
         </table>
         <p style="margin-top:10px">Wall clock with <span class="num">make -j8</span> on the
-          laptop. The full 1,000-replication grid does not need the cluster.</p>
+          laptop, best of three. Adding the GMM multiplied every row by two to three: it is
+          the only estimator that searches. The full 1,000-replication grid still does not
+          need the cluster.</p>
       </div>
       <div>
         <h3>What would change the story</h3>
-        <p>Anderson&ndash;Hsiao IV would show the first-difference failure is endogeneity, not
-          differencing. Starting from y<sub>i0</sub>&nbsp;=&nbsp;0 instead of the stationary draw
-          would move pooled OLS and within. Raising &rho; toward 0.95 would deepen the Nickell
-          bias at every T.</p>
+        <p>Adding the levels moment Var(y<sub>it</sub>) to the growth moments would identify
+          &sigma;<sub>&alpha;</sub> too. Starting from y<sub>i0</sub>&nbsp;=&nbsp;0 instead of
+          the stationary draw would move pooled OLS and within, and would cost the GMM its
+          exact moment conditions. Raising &rho; toward 0.95 would deepen the Nickell bias at
+          every T.</p>
       </div>
     </div>
   </section>
 
   <footer>Built from output/summary.csv at commit {commit}; SPEC.md {spec}.
-    All 30 cells verified against the plims in the spec's benchmark tables.</footer>
+    All 40 cells verified against the plims in the spec's benchmark tables.</footer>
 </div>
 """
 
@@ -503,16 +591,20 @@ def render(output_dir: Path) -> str:
         fig2=_fig_densities(draws),
         main=_main_table(summary, ts),
         cov=_coverage_table(summary, ts),
+        sigma=_sigma_eps_table(summary, ts),
         commit=git_commit(root)[:10],
         spec=spec_sha256(root / "SPEC.md")[:10],
         se_ratio=f"{summary.se_over_sd.median():.2f}",
         cov_m0=f"{summary[(summary.estimator == 'pooled') & (summary.model == 'M0')].coverage.mean():.2f}",
+        cov_gmm=f"{summary[summary.estimator == 'gmm'].coverage.mean():.2f}",
         max_gap=f"{(summary.mean_rho - summary.plim).abs().max():.3f}",
         mc=f"{summary.mc_se.max():.3f}",
         w3=f"{plim('within', 'M0', ts[0]):.3f}",
         w50=f"{plim('within', 'M0', ts[-1]):.3f}",
         p_m1=f"{plim('pooled', 'M1', ts[0]):.3f}",
         p_fd=f"{plim('fd', 'M0', ts[0]):.3f}",
+        p_gmm=f"{plim('gmm', 'M1', ts[0]):.3f}",
+        p_sigma=f"{SIGMA_EPS:.1f}",
     )
     return PAGE.format(**fields)
 

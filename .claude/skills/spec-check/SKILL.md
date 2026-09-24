@@ -29,7 +29,8 @@ written in SPEC.md** (do the arithmetic yourself; do not take the code's word fo
 it) and compare against these tables in the spec:
 
 - "Analytical benchmarks": pooled OLS 0.700 (M0) and 0.982 (M1), first
-  differences −0.150 in both.
+  differences −0.150 in both, growth-covariance GMM 0.700 in both (it is
+  consistent, so its plim is ρ itself, and σ̂_ε has plim 0.300).
 - "Within (Nickell 1981)": the bias and plim columns at T = 3, 5, 10, 20, 50, and
   that the leading term −(1+ρ)/(T−1) approaches the exact bias as T grows.
 - The variance note: σ²\_μ = σ²\_α/(1−ρ)² ≈ 2.78, σ²\_u = σ²\_ε/(1−ρ²) ≈ 0.176,
@@ -61,14 +62,18 @@ judgement-heavy check; quote the line you are judging.
 | Pooled OLS: y\_it on a constant and the lag, t = 1..T | `src/sim/estimators.py` |
 | First differences: Δy\_it on Δy\_i,t−1, no constant, t = 2..T | `src/sim/estimators.py` |
 | Within: y and its lag demeaned **separately** (y over t = 1..T, lag over t = 0..T−1) | `src/sim/estimators.py` |
-| Estimators written as closed-form ratios of sums, not a regression package | `src/sim/estimators.py` |
+| Ω: 2σ²\_ε/(1+ρ) on the diagonal, −σ²\_ε(1−ρ)/(1+ρ)·ρ^(\|t−s\|−1) off it | `src/sim/analytics.py` |
+| GMM: identity weight on all T² growth moments, σ²\_ε concentrated out, grid then golden section over ρ, growth at t = 1..T (not 2..T) | `src/sim/estimators.py` |
+| GMM standard errors: the sandwich (G′G)⁻¹G′ŜG(G′G)⁻¹/N, one moment vector per individual | `src/sim/estimators.py` |
+| The three regressions written as closed-form ratios of sums, not a regression package | `src/sim/estimators.py` |
 | SEs clustered by individual; CI = ρ̂ ± 1.96 × SE | `src/sim/estimators.py`, `src/sim/summarize.py` |
 | Grid T ∈ {3,5,10,20,50}, N = 500, R = 10 pilot | `src/sim/config.py`, `Makefile` |
+| Four estimators, so 8 estimator × model cells | `src/sim/config.py` |
 | One master seed; replication seed derived from (model, T, N, r) | `src/sim/dgp.py` |
-| All three estimators share the same draw within a replication | `src/sim/runner.py` |
-| Raw ρ̂ and SE saved per replication | `src/sim/runner.py` |
-| Outputs: mean bias + its Monte Carlo SE, SD, RMSE, coverage, mean SE / SD | `src/sim/summarize.py` |
-| Deliverables: main table, Figure 1, Figure 2, coverage table | `src/sim/summarize.py`, `src/sim/figures.py` |
+| All four estimators share the same draw within a replication | `src/sim/runner.py` |
+| Raw ρ̂ and SE saved per replication, plus σ̂_ε and its SE where there is one | `src/sim/runner.py` |
+| Outputs: mean bias + its Monte Carlo SE, SD, RMSE, coverage, mean SE / SD — and the same five for σ̂_ε | `src/sim/summarize.py` |
+| Deliverables: main table, Figure 1, Figure 2, coverage table, σ\_ε table | `src/sim/summarize.py`, `src/sim/figures.py` |
 
 Then confirm every Makefile target and dependency in the spec's Makefile table
 exists as written:
@@ -88,6 +93,8 @@ them once:
   file targets depending on them stay incremental.
 - The spec does not pin a finite-sample correction for the clustered SE; the code
   uses G/(G−1), explained in the `src/sim/estimators.py` docstring.
+- The spec does not pin how far to refine the GMM search; the code runs 40
+  golden-section iterations, which is past the precision of a smooth maximum.
 
 Finally, run the tests — they encode the spec's own numbers:
 

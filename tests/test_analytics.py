@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from sim.analytics import nickell_bias, plim, plim_fd, plim_pooled, plim_within, var_mu, var_u
-from sim.config import MODELS, RHO, SIGMA_ALPHA, SIGMA_EPS, T_GRID
+from sim.config import ESTIMATORS, MODELS, RHO, SIGMA_ALPHA, SIGMA_EPS, T_GRID
 
 # SPEC.md, "Data-generating process": the variance decomposition quoted there.
 VARIANCE_NOTE = {"var_mu_M1": 2.78, "var_u": 0.176, "ratio": 16}
@@ -16,6 +16,8 @@ PLIM_TABLE = {
     ("pooled", "M1"): 0.982,
     ("fd", "M0"): -0.150,
     ("fd", "M1"): -0.150,
+    ("gmm", "M0"): 0.700,
+    ("gmm", "M1"): 0.700,
 }
 
 # SPEC.md, "Within (Nickell 1981)": bias and plim by T.
@@ -72,6 +74,13 @@ def test_fd_plim_is_free_of_T_sigma_eps_and_sigma_alpha():
 
 
 def test_every_grid_cell_has_a_plim():
-    values = [plim(e, m, T) for e in ("pooled", "fd", "within") for m in MODELS for T in T_GRID]
-    assert len(values) == 3 * len(MODELS) * len(T_GRID)
+    values = [plim(e, m, T) for e in ESTIMATORS for m in MODELS for T in T_GRID]
+    assert len(values) == len(ESTIMATORS) * len(MODELS) * len(T_GRID)
     assert all(abs(v) < 2 for v in values)
+
+
+def test_the_gmm_plim_is_the_truth_in_both_models_at_every_T():
+    """Consistency: Omega is free of alpha_i, so M0 and M1 share one plim."""
+    for model in MODELS:
+        for T in T_GRID:
+            assert plim("gmm", model, T) == RHO

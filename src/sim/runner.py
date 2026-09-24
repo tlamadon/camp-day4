@@ -1,6 +1,6 @@
 """Run one design cell and write it to parquet.
 
-One cell is one (model, T, N) design point at R replications.  All three
+One cell is one (model, T, N) design point at R replications.  All four
 estimators see the same simulated panel within a replication, so the gaps
 between them are not Monte Carlo noise.
 """
@@ -42,10 +42,11 @@ def run_cell(
     R: int,
     master_seed: int = MASTER_SEED,
 ) -> pd.DataFrame:
-    """Simulate R panels and fit all three estimators on each.
+    """Simulate R panels and fit all four estimators on each.
 
-    Returns one row per (replication, estimator) with the raw estimate and its
-    clustered standard error, so new summary statistics never need a rerun.
+    Returns one row per (replication, estimator) with the raw estimates and their
+    clustered standard errors, so new summary statistics never need a rerun.
+    The sigma_eps columns are NaN for the three estimators that identify rho only.
     """
     rows: list[dict[str, object]] = []
     for rep in range(R):
@@ -67,6 +68,8 @@ def run_cell(
                     "estimator": name,
                     "rho_hat": fit.rho_hat,
                     "se": fit.se,
+                    "sigma_eps_hat": fit.sigma_eps_hat,
+                    "sigma_eps_se": fit.sigma_eps_se,
                 }
             )
     df = pd.DataFrame(rows)

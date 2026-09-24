@@ -1,7 +1,8 @@
 """The estimators must equal their textbook regressions, and hit their plims at large N.
 
 The large-N test is the gate SPEC.md puts before running the grid: at N = 10^6
-and T = 10 each estimator should land within 0.005 of its benchmark plim.
+and T = 10 each estimator should land within 0.005 of its benchmark plim.  The
+GMM estimator's own properties live in test_gmm.py.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ import numpy as np
 import pytest
 
 from sim.analytics import plim
-from sim.config import MODELS, RHO
+from sim.config import ESTIMATORS, MODELS, RHO
 from sim.dgp import seed_sequence, simulate_panel
 from sim.estimators import ESTIMATOR_FUNCS, first_difference, pooled_ols, within
 
@@ -29,7 +30,7 @@ def big_panels():
 
 
 @pytest.mark.parametrize("model", MODELS)
-@pytest.mark.parametrize("estimator", ["pooled", "fd", "within"])
+@pytest.mark.parametrize("estimator", ESTIMATORS)
 def test_estimator_hits_its_plim_at_large_N(big_panels, estimator, model):
     fit = ESTIMATOR_FUNCS[estimator](big_panels[model])
     assert fit.rho_hat == pytest.approx(plim(estimator, model, BIG_T), abs=TOL)
@@ -119,7 +120,7 @@ def pooled_ols_on_differences(y: np.ndarray) -> float:
     return float((x * dep).sum() / (x * x).sum())
 
 
-@pytest.mark.parametrize("estimator", ["pooled", "fd", "within"])
+@pytest.mark.parametrize("estimator", ESTIMATORS)
 def test_standard_errors_are_positive_and_shrink_with_N(estimator):
     small = ESTIMATOR_FUNCS[estimator](small_panel(T=6, N=200))
     large = ESTIMATOR_FUNCS[estimator](small_panel(T=6, N=20_000))

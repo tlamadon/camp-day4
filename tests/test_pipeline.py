@@ -8,15 +8,16 @@ import pytest
 
 from sim.__main__ import main
 from sim.check import check_outputs
-from sim.config import ESTIMATORS, MODELS, RHO, T_GRID, Z95
+from sim.config import ESTIMATES_SIGMA_EPS, ESTIMATORS, MODELS, RHO, SIGMA_EPS, T_GRID, Z95
 from sim.runner import cell_name, load_cells, parse_cell_name, read_cell_metadata, run_cell, write_cell
-from sim.summarize import coverage_table, main_table, summarize
+from sim.summarize import coverage_table, main_table, sigma_eps_table, summarize
 
 
 def test_grid_is_two_models_by_five_T():
     assert len(MODELS) == 2
     assert T_GRID == (3, 5, 10, 20, 50)
     assert len(MODELS) * len(T_GRID) == 10
+    assert len(ESTIMATORS) * len(MODELS) == 8  # SPEC.md: 8 estimator x model cells
 
 
 @pytest.mark.parametrize(("model", "T", "N"), [("M0", 3, 500), ("M1", 50, 5000)])
@@ -32,6 +33,11 @@ def test_run_cell_shares_draws_across_estimators():
     again = run_cell("M1", 5, 300, R=4)
     assert np.allclose(df["rho_hat"], again["rho_hat"])
     assert df["se"].gt(0).all()
+
+    # Only the GMM fills the sigma_eps columns; the others estimate rho alone.
+    reports_sigma = df["estimator"].isin(ESTIMATES_SIGMA_EPS)
+    assert df.loc[reports_sigma, "sigma_eps_hat"].notna().all()
+    assert df.loc[~reports_sigma, "sigma_eps_hat"].isna().all()
 
 
 def test_cell_file_carries_spec_hash_and_commit(tmp_path):
@@ -71,6 +77,17 @@ def test_summary_metrics_and_tables(tmp_path):
     ]
     expected = ((cell["rho_hat"] - RHO).abs() <= Z95 * cell["se"]).mean()
     assert row["coverage"] == pytest.approx(expected)
+
+    # The sigma_eps block covers exactly the cells whose estimator reports one.
+    reports_sigma = summary["estimator"].isin(ESTIMATES_SIGMA_EPS)
+    assert summary.loc[reports_sigma, "mean_sigma_eps"].notna().all()
+    assert summary.loc[~reports_sigma, "mean_sigma_eps"].isna().all()
+    assert (summary.loc[reports_sigma, "sigma_eps_plim"] == SIGMA_EPS).all()
+    assert summary.loc[reports_sigma, "sigma_eps_bias"].abs().max() < 0.05
+
+    sigma = sigma_eps_table(summary)
+    assert len(sigma) == len(ESTIMATES_SIGMA_EPS) * len(MODELS) * 2  # mean and coverage
+    assert list(sigma.columns) == ["Estimator", "Model", "Statistic", "T=3", "T=5"]
 
     main = main_table(summary)
     assert len(main) == len(ESTIMATORS) * len(MODELS)

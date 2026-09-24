@@ -22,23 +22,25 @@ PY     := uv run python
 OUT    := output
 PILOT  := $(OUT)/pilot
 STAMP  := .make
+LEAN   := proofs
 SRC    := $(wildcard src/sim/*.py)
 TESTS  := $(wildcard tests/*.py)
 
 CELLS  := $(foreach m,$(MODELS),$(foreach t,$(TS),$(PILOT)/$(m)_T$(t)_N$(N).parquet))
 
 SUMMARY    := $(OUT)/summary.csv
-SUMMARY_MD := $(OUT)/table_main.md $(OUT)/table_coverage.md
+SUMMARY_MD := $(OUT)/table_main.md $(OUT)/table_coverage.md $(OUT)/table_sigma_eps.md
 FIG1       := $(OUT)/figures/fig1_mean_rho_by_T.pdf
 FIG2       := $(OUT)/figures/fig2_density_T10.pdf
 TABLE1     := $(OUT)/tables/table_main.tex
 TABLE2     := $(OUT)/tables/table_coverage.tex
+TABLE3     := $(OUT)/tables/table_sigma_eps.tex
 REPORT     := $(OUT)/report.html
 FRAGMENT   := $(OUT)/artifact.html
 
 .DEFAULT_GOAL := all
 .DELETE_ON_ERROR:
-.PHONY: all setup test sim summary figures tables report check clean distclean help
+.PHONY: all setup test sim summary figures tables report proof proof-numeric check clean distclean help
 
 ## all: the default target -- figures and summary tables
 all: figures summary
@@ -66,7 +68,7 @@ $(PILOT)/%.parquet: $(STAMP)/test $(SRC) SPEC.md
 ## sim: every pilot cell (2 models x 5 values of T)
 sim: $(CELLS)
 
-## summary: bias, SD, RMSE and coverage tables
+## summary: bias, SD, RMSE and coverage tables, for rho-hat and sigma-eps-hat
 summary: $(SUMMARY) $(SUMMARY_MD)
 $(SUMMARY): $(CELLS) $(SRC)
 	$(PY) -m sim summary --output-dir $(OUT)
@@ -79,16 +81,30 @@ $(FIG1): $(SUMMARY) $(SRC)
 $(FIG2): $(FIG1) ;
 
 ## tables: LaTeX tables (PDF build on hold until a TeX engine is pinned)
-tables: $(TABLE1) $(TABLE2)
+tables: $(TABLE1) $(TABLE2) $(TABLE3)
 $(TABLE1): $(SUMMARY) $(SRC)
 	$(PY) -m sim tables --output-dir $(OUT)
-$(TABLE2): $(TABLE1) ;
+$(TABLE2) $(TABLE3): $(TABLE1) ;
 
 ## report: one-page HTML summary (open output/report.html, or publish the fragment)
 report: $(REPORT) $(FRAGMENT)
 $(REPORT): $(SUMMARY) $(SRC)
 	$(PY) -m sim report --output-dir $(OUT)
 $(FRAGMENT): $(REPORT) ;
+
+## proof: machine-check the growth autocovariance matrix (Lean 4 + Mathlib)
+# elan (pinned in mise.toml) provides `lake`.  When elan comes from mise its
+# proxies are not always on PATH, so fall back to `elan run` with the toolchain
+# pinned in proofs/lean-toolchain.  See proofs/README.md.
+proof:
+	@cd $(LEAN) && \
+	  if command -v lake >/dev/null 2>&1; then LAKE="lake"; \
+	  else LAKE="elan run --install $$(cat lean-toolchain) lake"; fi; \
+	  $$LAKE exe cache get && $$LAKE build
+
+## proof-numeric: cross-check the proved matrix against simulated panels
+proof-numeric: $(STAMP)/setup
+	$(PY) $(LEAN)/numeric_check.py
 
 ## check: outputs match the current spec and commit, and nothing is stale
 check: SPEC.md $(CELLS) $(SUMMARY) $(FIG1) $(FIG2)
