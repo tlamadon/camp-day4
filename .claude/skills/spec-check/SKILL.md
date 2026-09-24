@@ -39,8 +39,11 @@ Also check the grid counts: the spec's design grid (2 models × 5 values of T =
 10 cells) must equal the number of cells the Makefile builds.
 
 ```bash
-make -n sim | grep -c 'sim run'   # expect 10
+make -Bn sim | grep -c 'sim run'   # expect 10
 ```
+
+(`-B` forces the dry run to print every recipe even when the cells are already
+built; a plain `make -n sim` prints nothing once everything is up to date.)
 
 Report each recomputed number that disagrees with the spec by more than the
 precision the spec prints.

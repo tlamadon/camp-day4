@@ -16,6 +16,10 @@ make -j sim           # cells in parallel; each is its own file target
 make check            # outputs match the current SPEC.md and commit
 ```
 
+`make check` ties every output to the exact commit it was built from, so the
+order is **commit, then build**: after any commit, `make clean && make` restamps
+the outputs. A run from a dirty tree is stamped `-dirty` and fails the check.
+
 One cell on its own, which is also the command the HPC scale-up reuses:
 
 ```bash
