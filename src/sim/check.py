@@ -58,9 +58,10 @@ def check_outputs(output_dir: Path, expect_cells: bool = True) -> tuple[bool, li
         rel = path.relative_to(root) if path.is_relative_to(root) else path
         problems = []
         if meta.get("spec_sha256") != want_spec:
-            problems.append(f"spec {meta.get('spec_sha256', 'missing')[:12]}")
+            problems.append(f"built against spec {meta.get('spec_sha256', 'missing')[:12]}")
         if meta.get("git_commit") != want_commit:
-            problems.append(f"commit {meta.get('git_commit', 'missing')[:12]}")
+            # Printed whole: a truncated sha would hide a '-dirty' suffix.
+            problems.append(f"built at commit {meta.get('git_commit', 'missing')}")
         if problems:
             ok = False
             report.append(f"FAIL  {rel}: stale ({', '.join(problems)})")
