@@ -33,10 +33,12 @@ FIG1       := $(OUT)/figures/fig1_mean_rho_by_T.pdf
 FIG2       := $(OUT)/figures/fig2_density_T10.pdf
 TABLE1     := $(OUT)/tables/table_main.tex
 TABLE2     := $(OUT)/tables/table_coverage.tex
+REPORT     := $(OUT)/report.html
+FRAGMENT   := $(OUT)/artifact.html
 
 .DEFAULT_GOAL := all
 .DELETE_ON_ERROR:
-.PHONY: all setup test sim summary figures tables check clean distclean help
+.PHONY: all setup test sim summary figures tables report check clean distclean help
 
 ## all: the default target -- figures and summary tables
 all: figures summary
@@ -81,6 +83,12 @@ tables: $(TABLE1) $(TABLE2)
 $(TABLE1): $(SUMMARY) $(SRC)
 	$(PY) -m sim tables --output-dir $(OUT)
 $(TABLE2): $(TABLE1) ;
+
+## report: one-page HTML summary (open output/report.html, or publish the fragment)
+report: $(REPORT) $(FRAGMENT)
+$(REPORT): $(SUMMARY) $(SRC)
+	$(PY) -m sim report --output-dir $(OUT)
+$(FRAGMENT): $(REPORT) ;
 
 ## check: outputs match the current spec and commit, and nothing is stale
 check: SPEC.md $(CELLS) $(SUMMARY) $(FIG1) $(FIG2)

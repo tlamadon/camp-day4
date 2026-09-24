@@ -40,6 +40,13 @@ def cmd_figures(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    from . import report
+
+    report.build(args.output_dir)
+    return 0
+
+
 def cmd_tables(args: argparse.Namespace) -> int:
     from . import tables
 
@@ -86,6 +93,7 @@ def build_parser() -> argparse.ArgumentParser:
         ("summary", cmd_summary, "collapse the raw draws into summary.csv and tables"),
         ("figures", cmd_figures, "draw Figures 1 and 2"),
         ("tables", cmd_tables, "write the LaTeX tables"),
+        ("report", cmd_report, "write the one-page HTML summary"),
         ("check", cmd_check, "verify outputs match the current spec and commit"),
     ]:
         p = sub.add_parser(name, help=help_text)

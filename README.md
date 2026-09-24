@@ -13,8 +13,12 @@ number. This README only says how to run it.
 mise install          # provisions python and uv (see mise.toml)
 make                  # setup -> tests -> 10 cells -> summary -> figures
 make -j sim           # cells in parallel; each is its own file target
+make report           # one-page HTML summary at output/report.html
 make check            # outputs match the current SPEC.md and commit
 ```
+
+`report` and `tables` sit outside `all`, so the target graph SPEC.md describes is
+unchanged; run them when you want the page or the LaTeX.
 
 `make check` ties every output to the exact commit it was built from, so the
 order is **commit, then build**: after any commit, `make clean && make` restamps
@@ -37,6 +41,8 @@ uv run python -m sim run --model M1 --T 10 --N 500 --R 10 --seed 0
 | `output/figures/fig1_mean_rho_by_T.*` | Figure 1: mean ρ̂ against T, two panels, dashed plims |
 | `output/figures/fig2_density_T10.*` | Figure 2: densities of ρ̂ at T = 10 for the six cells |
 | `output/tables/*.tex` | LaTeX versions (`make tables`); the PDF build waits on a TeX engine |
+| `output/report.html` | one-page HTML summary of the whole pilot (`make report`) -- open it straight from disk |
+| `output/artifact.html` | the same page as a fragment, for publishing as an Artifact |
 
 ## Layout
 
@@ -50,6 +56,7 @@ src/sim/
   summarize.py    draws -> summary.csv and the two deliverable tables
   figures.py      Figures 1 and 2
   tables.py       LaTeX tables
+  report.py       the one-page HTML summary, charts drawn as inline SVG
   check.py        the mechanical half of the spec audit
 tests/            the spec's own numbers, including the N = 10^6 plim gate
 .claude/skills/spec-check/   the Claude Code skill that audits the repo against SPEC.md
