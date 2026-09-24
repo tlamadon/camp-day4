@@ -1,0 +1,11 @@
+# Tool versions for the dynamic-panel AR(1) simulation.
+# `mise install` provisions these; the Makefile then drives everything through uv.
+# A TeX engine (tectonic) gets added here once the LaTeX tables come off hold.
+
+[tools]
+python = "3.13"
+uv = "0.11"
+
+[env]
+# Keep uv's virtualenv inside the project so the Makefile stamps are stable.
+UV_PROJECT_ENVIRONMENT = ".venv"
