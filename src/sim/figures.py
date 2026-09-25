@@ -2,7 +2,7 @@
 
 Figure 1: mean rho-hat against T, one line per estimator, two panels (M0, M1),
 dashed analytical plims and a reference line at the true rho.
-Figure 2: densities of rho-hat at T = 10 for the eight estimator x model cells.
+Figure 2: densities of rho-hat at T = 10 for the fifteen estimator x model cells.
 """
 
 from __future__ import annotations
@@ -29,16 +29,22 @@ from .config import (  # noqa: E402
 )
 from .runner import load_cells  # noqa: E402
 
-# Categorical slots 1-4 of the validated default palette, in its fixed order.
+# Categorical slots 1-5 of the validated default palette, in its fixed order.
 # These are line and density charts, so the adjacent pairlist applies, and the
-# four-slot set clears every hard gate on it in both modes (worst adjacent CVD
+# five-slot set clears every hard gate on it in both modes (worst adjacent CVD
 # dE 9.1 light / 8.4 dark).  Two riders, both already met here: yellow-orange is
 # the weak pair once any two series are compared directly, so marker shape and
-# the direct labels carry identity as well as colour; and aqua and yellow sit
-# below 3:1 on the light surface, whose required relief is those same direct
-# labels plus the markdown tables as the table view.
-SERIES = {"pooled": "#2a78d6", "fd": "#eb6834", "within": "#1baf7a", "gmm": "#eda100"}
-MARKERS = {"pooled": "o", "fd": "s", "within": "^", "gmm": "D"}
+# the direct labels carry identity as well as colour; and aqua, yellow and
+# magenta sit below 3:1 on the light surface, whose required relief is those
+# same direct labels plus the markdown tables as the table view.
+SERIES = {
+    "pooled": "#2a78d6",
+    "fd": "#eb6834",
+    "within": "#1baf7a",
+    "gmm": "#eda100",
+    "gmm_me": "#e87ba4",
+}
+MARKERS = {"pooled": "o", "fd": "s", "within": "^", "gmm": "D", "gmm_me": "v"}
 
 SURFACE = "#fcfcfb"
 INK = "#0b0b0b"
@@ -100,23 +106,25 @@ def figure_mean_by_T(summary: pd.DataFrame, target: Path, N: int = N_BASELINE) -
     t_values = sorted(block["T"].unique())
 
     with plt.rc_context(RC):
-        fig, axes = plt.subplots(1, 2, figsize=(8.6, 3.9), sharey=True)
+        fig, axes = plt.subplots(1, len(MODELS), figsize=(4.0 * len(MODELS), 3.9), sharey=True)
 
         for ax, model in zip(axes, MODELS, strict=True):
             _style_axes(ax)
             ends: list[tuple[float, float, str]] = []
             ax.axhline(RHO, color=INK_MUTED, linewidth=1.0, zorder=1)
-            # Below the line: the GMM sits exactly on it, so the space above is taken.
-            ax.annotate(
-                f"true $\\rho$ = {RHO}",
-                xy=(t_values[0], RHO),
-                xytext=(0, -5),
-                textcoords="offset points",
-                color=INK_MUTED,
-                fontsize=8,
-                ha="left",
-                va="top",
-            )
+            if model == MODELS[0]:
+                # Once, on the first panel.  Below the line: a consistent
+                # estimator sits exactly on it, so the space above is taken.
+                ax.annotate(
+                    f"true $\\rho$ = {RHO}",
+                    xy=(t_values[0], RHO),
+                    xytext=(0, -5),
+                    textcoords="offset points",
+                    color=INK_MUTED,
+                    fontsize=8,
+                    ha="left",
+                    va="top",
+                )
 
             for estimator in ESTIMATORS:
                 cell = block[(block["model"] == model) & (block["estimator"] == estimator)]
@@ -165,18 +173,18 @@ def figure_mean_by_T(summary: pd.DataFrame, target: Path, N: int = N_BASELINE) -
             ax.set_xlabel("Panel length $T$")
             ax.set_title(MODEL_LABELS[model], color=INK, loc="left", pad=8)
 
-        axes[0].set_ylim(-0.28, 1.10)
+        axes[0].set_ylim(-0.42, 1.10)
         axes[0].set_ylabel(r"Mean $\hat\rho$ across replications")
         # The legend runs under both panels: four entries inside the M0 panel would
         # sit on the pooled and GMM lines, which both track 0.7 there.
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="lower center", ncols=4, bbox_to_anchor=(0.5, -0.08))
+        fig.legend(handles, labels, loc="lower center", ncols=5, bbox_to_anchor=(0.5, -0.08))
 
         reps = int(block["R"].max())
         fig.suptitle(
             r"Solid: simulated mean $\hat\rho$ (95% Monte Carlo interval).  "
-            r"Dashed: analytical plim.  In M0 pooled OLS and the GMM are both "
-            r"consistent, so their lines coincide."
+            r"Dashed: analytical plim.  Where two estimators are consistent in the "
+            r"same model their lines coincide, on 0.7."
             f"   N = {N}, R = {reps}.",
             x=0.0,
             y=1.04,
@@ -243,7 +251,7 @@ def _gaussian_kde(sample: np.ndarray, pad: float = 4.0) -> tuple[np.ndarray, np.
 def figure_density_at_T(
     draws: pd.DataFrame, target: Path, T: int = 10, N: int = N_BASELINE
 ) -> list[Path]:
-    """Figure 2: densities of rho-hat at one T, for the eight estimator x model cells."""
+    """Figure 2: densities of rho-hat at one T, one panel per model."""
     block = draws[(draws["T"] == T) & (draws["N"] == N)]
     if block.empty:
         raise ValueError(f"no draws at T={T}, N={N}")
@@ -253,13 +261,15 @@ def figure_density_at_T(
     xlim = (min(lo, RHO) - pad, max(hi, RHO) + pad)
 
     with plt.rc_context(RC):
-        fig, axes = plt.subplots(2, 1, figsize=(8.6, 4.6), sharex=True, sharey=True)
+        fig, axes = plt.subplots(
+            len(MODELS), 1, figsize=(8.6, 2.3 * len(MODELS)), sharex=True, sharey=True
+        )
 
         for ax, model in zip(axes, MODELS, strict=True):
             _style_axes(ax, y_grid=False, x_grid=True)
             ax.axvline(RHO, color=INK_MUTED, linewidth=1.0, zorder=1)
-            # In M0 pooled OLS and the GMM are both consistent, so their peaks sit
-            # on top of each other; the second label of such a pair is raised.
+            # Consistent estimators share a peak, and in M2 the two growth fits
+            # land close as well; the later label of such a pair is raised.
             peaks: list[tuple[float, str]] = []
 
             for estimator in ESTIMATORS:
@@ -295,13 +305,17 @@ def figure_density_at_T(
                 )
                 peaks.append((float(np.mean(sample)), estimator))
 
+            gap = 0.12 * (xlim[1] - xlim[0])
+            placed: list[float] = []
             for x, estimator in sorted(peaks):
-                crowded = any(abs(x - other) < 0.12 * (xlim[1] - xlim[0]) for other, _ in peaks
-                              if other < x)
+                # One line up per label already sitting within a label's width:
+                # in M0 three estimators are consistent and share a peak exactly.
+                level = sum(1 for other in placed if abs(x - other) < gap)
+                placed.append(x)
                 ax.annotate(
                     ESTIMATOR_SHORT_LABELS[estimator],
                     xy=(x, 1.0),
-                    xytext=(0, 16 if crowded else 4),
+                    xytext=(0, 4 + 12 * level),
                     textcoords="offset points",
                     color=INK_SECONDARY,
                     fontsize=8,
@@ -310,7 +324,7 @@ def figure_density_at_T(
                 )
 
             ax.set_yticks([])
-            ax.set_ylim(-0.1, 1.30)
+            ax.set_ylim(-0.1, 1.46)
             ax.set_xlim(*xlim)
             ax.set_ylabel("Density")
             ax.set_title(MODEL_LABELS[model], color=INK, loc="left", pad=6)
@@ -318,7 +332,7 @@ def figure_density_at_T(
         # Labelled on the lower panel, where the space right of the line is free.
         axes[-1].annotate(
             f"true $\\rho$ = {RHO}",
-            xy=(RHO, 1.27),
+            xy=(RHO, 1.43),
             xytext=(4, 0),
             textcoords="offset points",
             color=INK_MUTED,
@@ -328,7 +342,7 @@ def figure_density_at_T(
         )
         axes[-1].set_xlabel(r"$\hat\rho$")
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="lower center", ncols=4, bbox_to_anchor=(0.5, -0.06))
+        fig.legend(handles, labels, loc="lower center", ncols=3, bbox_to_anchor=(0.5, -0.06))
 
         reps = int(block["R"].max())
         fig.suptitle(

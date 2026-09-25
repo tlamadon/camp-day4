@@ -44,6 +44,10 @@ def test_the_expected_story_holds_at_large_N(big_panels):
         assert first_difference(big_panels[model]).rho_hat < 0.0
         assert within(big_panels[model]).rho_hat < RHO - 0.15
 
+    # Measurement error deepens every one of those biases.
+    assert first_difference(big_panels["M2"]).rho_hat < first_difference(big_panels["M1"]).rho_hat
+    assert within(big_panels["M2"]).rho_hat < within(big_panels["M1"]).rho_hat
+
 
 # --- equivalence with the corresponding least-squares fits --------------------
 

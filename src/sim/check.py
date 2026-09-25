@@ -17,7 +17,7 @@ REQUIRED_DELIVERABLES = (
     "summary.csv",
     "table_main.md",
     "table_coverage.md",
-    "table_sigma_eps.md",
+    "table_variances.md",
     "figures/fig1_mean_rho_by_T.pdf",
     "figures/fig1_mean_rho_by_T.png",
     "figures/fig2_density_T10.pdf",

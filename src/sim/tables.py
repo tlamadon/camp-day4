@@ -11,7 +11,7 @@ from pathlib import Path
 import pandas as pd
 
 from .config import ESTIMATOR_LABELS, MODEL_LABELS
-from .summarize import coverage_table, main_table, sigma_eps_table
+from .summarize import coverage_table, main_table, variance_table
 
 
 def _escape(text: str) -> str:
@@ -65,12 +65,12 @@ def build(output_dir: Path) -> list[Path]:
             "table_coverage.tex",
         ),
         (
-            sigma_eps_table(summary),
-            "Mean $\\hat\\sigma_\\varepsilon$ (SD) [plim] and its coverage. "
-            "Only the growth-covariance GMM identifies $\\sigma_\\varepsilon$; "
-            "true $\\sigma_\\varepsilon = 0.3$.",
-            "tab:sigma",
-            "table_sigma_eps.tex",
+            variance_table(summary),
+            "The variance parameters the growth fits return beside $\\rho$, as "
+            "mean (SD) [plim] and coverage. True $\\sigma_\\varepsilon = 0.3$ "
+            "throughout; true $\\sigma_\\nu = 0.2$ in M2 and $0$ elsewhere.",
+            "tab:variances",
+            "table_variances.tex",
         ),
     ]
     for table, caption, label, name in specs:

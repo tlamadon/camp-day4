@@ -1,10 +1,11 @@
-"""The four estimators of rho.
+"""The five estimators of rho.
 
 The three regressions are closed-form ratios of sums: writing them as
 Sigma xy / Sigma x^2 rather than calling a regression package is faster and keeps
-the moment condition that each one gets wrong explicit.  The fourth, GMM on the
-growth covariance matrix, is the one that gets every moment right; it also
-returns sigma_eps, and it is the only estimator here that needs a search.
+the moment condition that each one gets wrong explicit.  The other two fit the
+covariance matrix of growth by minimum distance -- one assuming y is an AR(1),
+one allowing measurement error on top of it -- and return the variance
+parameters alongside rho.  The criterion they share lives in `growth.py`.
 
 Standard errors cluster by individual.  SPEC.md fixes the clustering but not the
 finite-sample correction; we use c = G / (G - 1) for all three, the convention
@@ -19,21 +20,22 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .analytics import growth_shape, growth_shape_deriv
-from .config import GMM_GRID_POINTS, GMM_RHO_BOUNDS
+from . import growth
 
 
 @dataclass(frozen=True)
 class Fit:
     """A point estimate of rho and its clustered standard error.
 
-    `sigma_eps_hat` is NaN for the three estimators that identify rho alone.
+    The variance fields are NaN for the estimators that do not report them.
     """
 
     rho_hat: float
     se: float
     sigma_eps_hat: float = float("nan")
     sigma_eps_se: float = float("nan")
+    sigma_nu_hat: float = float("nan")
+    sigma_nu_se: float = float("nan")
 
 
 def _fit(x: np.ndarray, y: np.ndarray) -> Fit:
@@ -87,105 +89,84 @@ def within(y: np.ndarray) -> Fit:
 # --- GMM on the growth covariance matrix -------------------------------------
 
 
-def _band_sums(C: np.ndarray) -> np.ndarray:
-    """Sum of C over each band |t - s| = k, for k = 0, ..., T-1.
+def _growth_moments(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Growth, and its sample second-moment matrix C = Delta Y' Delta Y / N.
 
-    Omega is Toeplitz, so the criterion only ever sees C through these T numbers,
-    which is what keeps a 1,001-point search over rho cheap at T = 50.
-    """
-    T = C.shape[0]
-    out = np.empty(T)
-    out[0] = float(np.trace(C))
-    for k in range(1, T):
-        out[k] = 2.0 * float(np.trace(C, offset=k))  # C is symmetric by construction
-    return out
-
-
-def _band_sizes(T: int) -> np.ndarray:
-    """How many entries of the T x T matrix each band holds."""
-    k = np.arange(T)
-    return np.where(k == 0, float(T), 2.0 * (T - k))
-
-
-def _criterion(rho: np.ndarray, bands: np.ndarray, sizes: np.ndarray) -> np.ndarray:
-    """The profiled criterion <A, C>^2 / <A, A>, band by band.
-
-    Maximising it is minimising ||C - sigma^2 A(rho)||_F^2 after concentrating
-    sigma^2 out.  It is invariant to the scale of A, so the 1 / (1 + rho) factor
-    of A is dropped here: the criterion then stays finite as rho approaches -1.
-    Branches where <A, C> < 0 would need a negative sigma^2 and are ruled out.
-    """
-    k = np.arange(bands.size)
-    a = np.where(k == 0, 2.0, -(1.0 - rho[:, None]) * rho[:, None] ** np.maximum(k - 1, 0))
-    inner = a @ bands
-    return np.where(inner > 0.0, inner**2 / (a**2 @ sizes), -np.inf)
-
-
-def _argmax_rho(bands: np.ndarray, sizes: np.ndarray) -> float:
-    """Grid search over rho, then golden-section refinement on the bracket."""
-    grid = np.linspace(*GMM_RHO_BOUNDS, GMM_GRID_POINTS)
-    best = int(np.argmax(_criterion(grid, bands, sizes)))
-    lo, hi = grid[max(best - 1, 0)], grid[min(best + 1, GMM_GRID_POINTS - 1)]
-
-    phi = (np.sqrt(5.0) - 1.0) / 2.0
-    c, d = hi - phi * (hi - lo), lo + phi * (hi - lo)
-    # 40 halvings shrink the bracket to ~3e-11; the maximum is smooth, so its
-    # location is only resolvable to ~1e-8 anyway.
-    for _ in range(40):
-        q_c, q_d = _criterion(np.array([c, d]), bands, sizes)
-        if q_c > q_d:
-            hi, d, c = d, c, d - phi * (d - lo)
-        else:
-            lo, c, d = c, d, c + phi * (hi - c)
-    return float(0.5 * (lo + hi))
-
-
-def gmm_growth(y: np.ndarray) -> Fit:
-    """Minimum distance between the sample and model covariance matrices of growth.
-
-    Fits Omega(rho, sigma_eps^2) to C = Delta Y' Delta Y / N in Frobenius norm,
-    i.e. GMM on all T^2 moments E[Delta y_it Delta y_is - Omega_ts] = 0 with an
-    identity weight.  Uses growth at t = 1, ..., T -- one period more than
-    first-difference OLS, which needs a lagged difference as well.
+    Not centred: E Delta y_it = 0 under the stationary initial condition, so the
+    raw cross-products already estimate Omega.  Growth runs over t = 1, ..., T --
+    one period more than first-difference OLS, which needs a lagged difference too.
     """
     d = np.diff(y, axis=1)
-    n, T = d.shape
-    C = d.T @ d / n  # not centred: E Delta y_it = 0 under the stationary start
+    return d, d.T @ d / d.shape[0]
 
-    bands, sizes = _band_sums(C), _band_sizes(T)
-    rho_hat = _argmax_rho(bands, sizes)
 
-    A = growth_shape(T, rho_hat)
-    s2 = float((A * C).sum() / (A * A).sum())
+def _growth_sandwich(d: np.ndarray, C: np.ndarray, blocks: list[np.ndarray]) -> np.ndarray:
+    """Var(theta-hat) for a minimum-distance fit of Omega under an identity weight.
 
-    # G = d vec(Omega) / d theta', theta = (rho, sigma_eps^2), one T x T block each.
-    g_rho, g_s2 = s2 * growth_shape_deriv(T, rho_hat), A
-    bread = np.array(
-        [
-            [(g_rho * g_rho).sum(), (g_rho * g_s2).sum()],
-            [(g_rho * g_s2).sum(), (g_s2 * g_s2).sum()],
-        ]
-    )
-    # One moment vector per individual, so the sandwich clusters by i on its own.
-    # The N x T^2 matrix of those vectors is never formed: G' (g_i - g-bar) is
-    # these two N-vectors, one matrix product each.
+    `blocks` are the T x T matrices d Omega / d theta_p.  One individual
+    contributes one moment vector, so this clusters by individual on its own.
+    The N x T^2 matrix of those vectors is never formed: G'(g_i - g-bar) is one
+    N-vector per parameter, a single matrix product each.  S-hat is never
+    inverted either -- it appears only as the small matrix G' S-hat G, which is
+    what lets the weight stay fixed when the efficient one does not exist.
+    """
+    n = d.shape[0]
+    bread = np.array([[float((p * q).sum()) for q in blocks] for p in blocks])
     score = np.column_stack(
-        [
-            ((d @ g_rho) * d).sum(axis=1) - (g_rho * C).sum(),
-            ((d @ g_s2) * d).sum(axis=1) - (g_s2 * C).sum(),
-        ]
+        [((d @ p) * d).sum(axis=1) - float((p * C).sum()) for p in blocks]
     )
     meat = score.T @ score / (n - 1.0)
     bread_inv = np.linalg.inv(bread)
-    var = bread_inv @ meat @ bread_inv / n
+    return bread_inv @ meat @ bread_inv / n
 
-    sigma = np.sqrt(s2) if s2 > 0.0 else 0.0
-    return Fit(
-        rho_hat,
-        float(np.sqrt(var[0, 0])),
-        float(sigma),
-        float(np.sqrt(var[1, 1]) / (2.0 * sigma)) if sigma > 0.0 else float("nan"),
+
+def _sd_and_se(variance: float, variance_se2: float) -> tuple[float, float]:
+    """A variance estimate and its sandwich entry, as an SD and its delta-method SE.
+
+    A variance pinned at zero is on the boundary of the parameter space, where
+    the usual asymptotics do not hold; the SE is NaN rather than misleading.
+    """
+    sd = float(np.sqrt(variance)) if variance > 0.0 else 0.0
+    if sd == 0.0:
+        return 0.0, float("nan")
+    return sd, float(np.sqrt(variance_se2) / (2.0 * sd))
+
+
+def gmm_growth(y: np.ndarray) -> Fit:
+    """Minimum distance between C and sigma_eps^2 A(rho).
+
+    GMM on all T^2 moments E[Delta y_it Delta y_is - Omega_ts] = 0 with an
+    identity weight.  Consistent wherever y really is an AR(1) around a level;
+    under M2 it fits the wrong shape and converges to a pseudo-true rho instead.
+    """
+    d, C = _growth_moments(y)
+    T = d.shape[1]
+    rho_hat, var_eps = growth.fit_ar1(C)
+
+    shape = growth.shape(T, rho_hat)
+    var = _growth_sandwich(d, C, [var_eps * growth.shape_deriv(T, rho_hat), shape])
+    sigma_eps, se_eps = _sd_and_se(var_eps, var[1, 1])
+    return Fit(rho_hat, float(np.sqrt(var[0, 0])), sigma_eps, se_eps)
+
+
+def gmm_growth_me(y: np.ndarray) -> Fit:
+    """The same against sigma_eps^2 A(rho) + sigma_nu^2 B: the M2 shape.
+
+    One more parameter buys consistency under measurement error, and costs
+    precision when there is none -- in M0 and M1 the true sigma_nu is zero, a
+    boundary the fit is pinned to about half the time.
+    """
+    d, C = _growth_moments(y)
+    T = d.shape[1]
+    rho_hat, var_eps, var_nu = growth.fit_me(C)
+
+    shape, noise = growth.shape(T, rho_hat), growth.noise_shape(T)
+    var = _growth_sandwich(
+        d, C, [var_eps * growth.shape_deriv(T, rho_hat), shape, noise]
     )
+    sigma_eps, se_eps = _sd_and_se(var_eps, var[1, 1])
+    sigma_nu, se_nu = _sd_and_se(var_nu, var[2, 2])
+    return Fit(rho_hat, float(np.sqrt(var[0, 0])), sigma_eps, se_eps, sigma_nu, se_nu)
 
 
 ESTIMATOR_FUNCS = {
@@ -193,4 +174,5 @@ ESTIMATOR_FUNCS = {
     "fd": first_difference,
     "within": within,
     "gmm": gmm_growth,
+    "gmm_me": gmm_growth_me,
 }

@@ -1,17 +1,32 @@
-"""Population objects: the probability limits, and the growth covariance matrix.
+"""The probability limits of SPEC.md's "Analytical benchmarks".
 
-The plims are the "Analytical benchmarks" section of SPEC.md, and are what the
-simulated means are checked against -- in the unit tests (at N = 10^6) and as the
-dashed reference lines on every figure.  Omega, the variance-autocovariance
-matrix of growth, is the thing the GMM estimator fits; it lives here because it
-is a property of the model, not of the estimator.
+These are what the simulated means are checked against -- in the unit tests (at
+N = 10^6) and as the dashed reference lines on every figure.
+
+Two layers.  The closed forms come first, exactly as the spec writes them; they
+hold in M0 and M1, where y is an AR(1).  Then the general versions, which take
+the autocovariance function of y's time-varying part and so cover M2 as well,
+where y is an ARMA(1,1) and none of the closed forms apply.  `plim` routes
+everything through the general versions, and the tests pin them to the closed
+forms wherever both are defined.  Omega itself lives in `growth.py`.
 """
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 
-from .config import ESTIMATES_SIGMA_EPS, RHO, SIGMA_EPS, sigma_alpha
+from . import growth
+from .config import (
+    ESTIMATES_SIGMA_EPS,
+    ESTIMATES_SIGMA_NU,
+    RHO,
+    SIGMA_EPS,
+    effect_kind,
+    sigma_alpha,
+    sigma_nu,
+)
 
 
 def var_mu(rho: float = RHO, s_alpha: float = 0.0) -> float:
@@ -56,46 +71,86 @@ def plim_within(T: int, rho: float = RHO) -> float:
     return rho + nickell_bias(T, rho)
 
 
-# --- The growth covariance matrix --------------------------------------------
+# --- The model in general: a level plus a stationary process ------------------
+#
+# Every model here is y_it = l_i + v_it with l_i time-invariant and v_it mean
+# zero and stationary.  Those two objects -- the variance of the level and the
+# autocovariance function of v -- are all any of the four regression plims needs.
 
 
-def growth_shape(T: int, rho: float = RHO) -> np.ndarray:
-    """A(rho) = Omega / sigma_eps^2, the T x T growth covariance matrix up to scale.
+def level_var(model: str, rho: float = RHO) -> float:
+    """Variance of the time-invariant part of y.
 
-    Omega is Toeplitz: 2 / (1 + rho) on the diagonal and
-    -(1 - rho) / (1 + rho) * rho^(|t-s|-1) off it (SPEC.md, "Growth-covariance
-    GMM"; derived in proofs/PanelAR1/GrowthACov.lean).  It is free of alpha_i and
-    of sigma_alpha, which is why the GMM estimator is consistent in M1 too.
+    M2's individual effect is already a level.  M0's and M1's is an intercept in
+    the recursion, worth alpha_i/(1 - rho) as a level.
     """
-    k = _lag_distance(T)
-    return np.where(k == 0, 2.0, -(1.0 - rho) * rho ** np.maximum(k - 1, 0)) / (1.0 + rho)
+    if effect_kind(model) == "level":
+        return sigma_alpha(model) ** 2
+    return var_mu(rho, sigma_alpha(model))
 
 
-def growth_shape_deriv(T: int, rho: float = RHO) -> np.ndarray:
-    """dA/drho, the rho block of the GMM gradient.
+def autocov(model: str, K: int, rho: float = RHO, s_eps: float = SIGMA_EPS) -> np.ndarray:
+    """gamma(0), ..., gamma(K) of y's time-varying part.
 
-    With f(rho) = -(1 - rho) / (1 + rho) and f'(rho) = 2 / (1 + rho)^2, the
-    off-diagonal entry f(rho) rho^(k-1) differentiates to
-    f'(rho) rho^(k-1) + f(rho) (k-1) rho^(k-2); the second term is absent at
-    k = 1, where the entry does not depend on rho at all.
+    The persistent component contributes sigma_eps^2 rho^k / (1 - rho^2) at every
+    lag; measurement error is white, so it lands on gamma(0) alone.  That gap --
+    geometric decay everywhere except a spike at lag zero -- is what separates
+    the two variances.
     """
-    k = _lag_distance(T)
-    f, f_prime = -(1.0 - rho) / (1.0 + rho), 2.0 / (1.0 + rho) ** 2
-    off = f_prime * rho ** np.maximum(k - 1, 0) + f * np.where(
-        k >= 2, (k - 1) * rho ** np.maximum(k - 2, 0), 0.0
-    )
-    return np.where(k == 0, -2.0 / (1.0 + rho) ** 2, off)
+    gamma = var_u(rho, s_eps) * rho ** np.arange(K + 1, dtype=float)
+    gamma[0] += sigma_nu(model) ** 2
+    return gamma
 
 
-def growth_cov(T: int, rho: float = RHO, s_eps: float = SIGMA_EPS) -> np.ndarray:
-    """Omega, the variance-autocovariance matrix of (Delta y_i1, ..., Delta y_iT)."""
-    return s_eps**2 * growth_shape(T, rho)
+def plim_pooled_general(model: str, rho: float = RHO, s_eps: float = SIGMA_EPS) -> float:
+    """(sigma_l^2 + gamma(1)) / (sigma_l^2 + gamma(0))."""
+    gamma = autocov(model, 1, rho, s_eps)
+    level = level_var(model, rho)
+    return float((level + gamma[1]) / (level + gamma[0]))
 
 
-def _lag_distance(T: int) -> np.ndarray:
-    """|t - s| for the T x T matrix of growth rates."""
-    t = np.arange(T)
-    return np.abs(np.subtract.outer(t, t))
+def plim_fd_general(model: str, rho: float = RHO, s_eps: float = SIGMA_EPS) -> float:
+    """Cov(Delta v_t, Delta v_t-1) / Var(Delta v), both read off gamma."""
+    gamma = autocov(model, 2, rho, s_eps)
+    return float((2 * gamma[1] - gamma[0] - gamma[2]) / (2 * (gamma[0] - gamma[1])))
+
+
+def plim_within_general(
+    model: str, T: int, rho: float = RHO, s_eps: float = SIGMA_EPS
+) -> float:
+    """The within plim at finite T, for any gamma.
+
+    Writing the two demeaned regressors as Q X v and Q Y v, where X and Y select
+    v_0..v_T-1 and v_1..v_T out of v and Q demeans over the T periods, the plim
+    is trace(Q X Gamma Y') / trace(Q X Gamma X').  With gamma the AR(1) one this
+    reproduces Nickell exactly, which is how it is tested.
+    """
+    gamma = autocov(model, T, rho, s_eps)
+    covariance = gamma[np.abs(np.subtract.outer(np.arange(T + 1), np.arange(T + 1)))]
+    lag, dep = np.eye(T + 1)[:T], np.eye(T + 1)[1:]
+    demean = np.eye(T) - np.ones((T, T)) / T
+    lagged = demean @ lag @ covariance
+    return float(np.trace(lagged @ dep.T) / np.trace(lagged @ lag.T))
+
+
+@lru_cache(maxsize=None)
+def growth_plim(
+    estimator: str, model: str, T: int, rho: float = RHO, s_eps: float = SIGMA_EPS
+) -> tuple[float, float, float]:
+    """(rho, sigma_eps, sigma_nu) the growth fit returns at the population Omega.
+
+    Where the shape being fitted is the one that generated Omega these are the
+    true values; where it is not -- the AR(1) fit under M2 -- they are the
+    pseudo-true values, the point the criterion actually converges to.  Running
+    the estimator's own criterion on the population matrix is what makes that
+    exact rather than approximate.
+    """
+    omega = growth.cov(T, rho, s_eps, sigma_nu(model))
+    if estimator == "gmm":
+        rho_star, var_eps = growth.fit_ar1(omega)
+        return rho_star, float(np.sqrt(var_eps)), float("nan")
+    rho_star, var_eps, var_nu = growth.fit_me(omega)
+    return rho_star, float(np.sqrt(var_eps)), float(np.sqrt(var_nu))
 
 
 # --- Dispatch ----------------------------------------------------------------
@@ -104,19 +159,24 @@ def _lag_distance(T: int) -> np.ndarray:
 def plim(estimator: str, model: str, T: int, rho: float = RHO, s_eps: float = SIGMA_EPS) -> float:
     """plim of `estimator` in `model` at panel length `T`."""
     if estimator == "pooled":
-        return plim_pooled(rho, s_eps, sigma_alpha(model))
+        return plim_pooled_general(model, rho, s_eps)
     if estimator == "fd":
-        return plim_fd(rho)
+        return plim_fd_general(model, rho, s_eps)
     if estimator == "within":
-        return plim_within(T, rho)
-    if estimator == "gmm":
-        # Consistent: the moment conditions hold exactly and Omega identifies rho.
-        return rho
+        return plim_within_general(model, T, rho, s_eps)
+    if estimator in ("gmm", "gmm_me"):
+        return growth_plim(estimator, model, T, rho, s_eps)[0]
     raise ValueError(f"unknown estimator {estimator!r}")
 
 
-def plim_sigma_eps(estimator: str, s_eps: float = SIGMA_EPS) -> float:
-    """plim of sigma_eps-hat, or NaN for the estimators that do not produce one."""
-    if estimator in ESTIMATES_SIGMA_EPS:
-        return s_eps
-    return float("nan")
+def plim_param(
+    parameter: str, estimator: str, model: str, T: int, rho: float = RHO, s_eps: float = SIGMA_EPS
+) -> float:
+    """plim of a variance parameter, or NaN where the estimator reports none."""
+    reports = {"sigma_eps": ESTIMATES_SIGMA_EPS, "sigma_nu": ESTIMATES_SIGMA_NU}
+    if parameter not in reports:
+        raise ValueError(f"unknown parameter {parameter!r}")
+    if estimator not in reports[parameter]:
+        return float("nan")
+    index = 1 if parameter == "sigma_eps" else 2
+    return growth_plim(estimator, model, T, rho, s_eps)[index]

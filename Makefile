@@ -10,7 +10,7 @@
 
 # --- design grid -------------------------------------------------------------
 
-MODELS := M0 M1
+MODELS := M0 M1 M2
 TS     := 3 5 10 20 50
 N      := 500
 R      := 10
@@ -29,12 +29,12 @@ TESTS  := $(wildcard tests/*.py)
 CELLS  := $(foreach m,$(MODELS),$(foreach t,$(TS),$(PILOT)/$(m)_T$(t)_N$(N).parquet))
 
 SUMMARY    := $(OUT)/summary.csv
-SUMMARY_MD := $(OUT)/table_main.md $(OUT)/table_coverage.md $(OUT)/table_sigma_eps.md
+SUMMARY_MD := $(OUT)/table_main.md $(OUT)/table_coverage.md $(OUT)/table_variances.md
 FIG1       := $(OUT)/figures/fig1_mean_rho_by_T.pdf
 FIG2       := $(OUT)/figures/fig2_density_T10.pdf
 TABLE1     := $(OUT)/tables/table_main.tex
 TABLE2     := $(OUT)/tables/table_coverage.tex
-TABLE3     := $(OUT)/tables/table_sigma_eps.tex
+TABLE3     := $(OUT)/tables/table_variances.tex
 REPORT     := $(OUT)/report.html
 FRAGMENT   := $(OUT)/artifact.html
 
