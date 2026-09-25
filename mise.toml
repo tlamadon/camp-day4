@@ -6,6 +6,16 @@
 python = "3.13"
 uv = "0.11"
 
+# Lean 4, for the machine-checked derivation in proofs/ (see proofs/README.md).
+# There is no `lean` entry in the mise registry, so pin elan, the Lean toolchain
+# manager, straight from its GitHub releases; its archive ships the installer
+# name `elan-init`, which is the same multi-call binary as `elan`.  elan then
+# installs the exact compiler named in proofs/lean-toolchain.  `make proof`
+# drives it.
+[tools."github:leanprover/elan"]
+version = "4.2.4"
+rename_exe = { "elan-init" = "elan" }
+
 [env]
 # Keep uv's virtualenv inside the project so the Makefile stamps are stable.
 UV_PROJECT_ENVIRONMENT = ".venv"
